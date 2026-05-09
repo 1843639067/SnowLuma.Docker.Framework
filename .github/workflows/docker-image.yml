@@ -23,6 +23,14 @@ on:
         description: Docker target platforms
         required: true
         default: "linux/amd64,linux/arm64"
+      snowluma_tag:
+        description: SnowLuma release tag whose artifact should be baked in (defaults to `tag`).
+        required: false
+        default: ""
+      snowluma_repository:
+        description: SnowLuma source repository in `owner/repo` form. Leave blank to fall back to the checked-in SnowLuma.Framework.tar.gz.
+        required: false
+        default: "SnowLuma/SnowLuma"
 
 jobs:
   resolve:
@@ -68,8 +76,33 @@ jobs:
       - name: Checkout Docker framework
         uses: actions/checkout@v6
 
-      - name: Verify prebuilt SnowLuma artifact
-        run: ./scripts/prepare-artifact.sh
+      # Pull the per-arch lite tarball from SnowLuma's GitHub release.
+      # `gh release download` waits for the asset to be ready, retries on
+      # transient failures, and fails loudly with a precise error if the
+      # tag/asset is missing — replacing the earlier curl + standalone
+      # prepare-artifact.sh sanity check. The Dockerfile itself does the
+      # final arch-specific presence test inside the build context.
+      - name: Download SnowLuma release artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SNOWLUMA_REPO: ${{ inputs.snowluma_repository }}
+          SNOWLUMA_TAG: ${{ inputs.snowluma_tag != '' && inputs.snowluma_tag || inputs.tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          case "${ARCH}" in
+            amd64) asset_arch="linux-x64" ;;
+            arm64) asset_arch="linux-arm64" ;;
+            *) echo "Unsupported matrix arch: ${ARCH}" >&2; exit 1 ;;
+          esac
+          asset="SnowLuma-${SNOWLUMA_TAG}-${asset_arch}-lite.tar.gz"
+          echo "Fetching ${asset} from ${SNOWLUMA_REPO}@${SNOWLUMA_TAG}"
+          gh release download "${SNOWLUMA_TAG}" \
+            --repo "${SNOWLUMA_REPO}" \
+            --pattern "${asset}" \
+            --output SnowLuma.Framework.tar.gz \
+            --clobber
+          ls -lh SnowLuma.Framework.tar.gz
 
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v4
