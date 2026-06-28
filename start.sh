@@ -8,7 +8,7 @@ set -euo pipefail
 : "${SNOWLUMA_DATA:=/app/snowluma-data}"
 : "${SNOWLUMA_WEBUI_PORT:=5099}"
 : "${SNOWLUMA_LOG_LEVEL:=info}"
-: "${SNOWLUMA_SCREEN:=1920x1080x16}"
+: "${SNOWLUMA_SCREEN:=1920x1080x24}"
 : "${SNOWLUMA_HOOK_AUTOLOAD:=1}"
 : "${SNOWLUMA_EXTRA_QQ_HOMES:=}"
 : "${SNOWLUMA_QQ_FLAGS:=--disable-gpu --disable-software-rasterizer --disable-gpu-compositing}"
@@ -24,7 +24,7 @@ DISPLAY_NUM="${DISPLAY_NUM%%.*}"
 chmod 1777 /tmp || true
 mkdir -p /tmp/.X11-unix
 chmod 1777 /tmp/.X11-unix || true
-rm -f /run/dbus/pid "/tmp/.X${DISPLAY_NUM}-lock" "/tmp/.X11-unix/X${DISPLAY_NUM}"
+rm -f /run/dbus/pid /run/dbus/system_bus_socket "/tmp/.X${DISPLAY_NUM}-lock" "/tmp/.X11-unix/X${DISPLAY_NUM}" /tmp/dbus-*
 
 mkdir -p \
   /var/run/dbus \
@@ -55,6 +55,7 @@ generate_extra_qq_supervisor_conf() {
   local homes="${SNOWLUMA_EXTRA_QQ_HOMES//,/ }"
   local home
   local index=1
+  local delay
 
   rm -f "${conf}"
 
@@ -79,9 +80,11 @@ generate_extra_qq_supervisor_conf() {
     mkdir -p "${home}"
     chown -R "${SNOWLUMA_UID}:${SNOWLUMA_GID}" "${home}"
 
+    delay=$(( (index - 1) * 10 ))
+
     cat >> "${conf}" <<EOF
 [program:qq-extra-${index}]
-command=qq --no-sandbox %(ENV_SNOWLUMA_QQ_FLAGS)s
+command=/bin/sh -c 'sleep ${delay}; exec qq --no-sandbox %(ENV_SNOWLUMA_QQ_FLAGS)s'
 directory=/app
 user=snowluma
 priority=15
@@ -94,7 +97,7 @@ stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
-environment=HOME="${home}",DISPLAY="%(ENV_DISPLAY)s",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",SNOWLUMA_HOOK_RUNTIME_DIR="%(ENV_SNOWLUMA_HOOK_RUNTIME_DIR)s"
+environment=HOME="${home}",DISPLAY="%(ENV_DISPLAY)s",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SESSION_BUS_ADDRESS="%(ENV_DBUS_SESSION_BUS_ADDRESS)s",SNOWLUMA_HOOK_RUNTIME_DIR="%(ENV_SNOWLUMA_HOOK_RUNTIME_DIR)s"
 
 EOF
 
@@ -132,6 +135,9 @@ try {
 runtimeConfig.webuiPort = webuiPort;
 fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(runtimeConfig, null, 2)}\n`, 'utf8');
 NODE
+# Node.js block above ran as root, so runtime.json is owned by root.
+# SnowLuma runs as snowluma user and needs write access to config/.
+chown "${SNOWLUMA_UID}:${SNOWLUMA_GID}" "${SNOWLUMA_DATA}/config" "${SNOWLUMA_DATA}/config/runtime.json"
 
 x11vnc -storepasswd "${VNC_PASSWD}" /root/.vnc/passwd >/dev/null
 
@@ -155,6 +161,10 @@ wait_for_xvfb() {
   return 1
 }
 
+export DBUS_SESSION_BUS_ADDRESS=""
+if DBUS_SESSION_BUS_ADDRESS=$(su -s /bin/bash -c 'dbus-daemon --session --fork --print-address' snowluma 2>/dev/null); then
+  export DBUS_SESSION_BUS_ADDRESS
+fi
 dbus-daemon --config-file=/usr/share/dbus-1/system.conf --print-address &
 Xvfb "${DISPLAY}" -screen 0 "${SNOWLUMA_SCREEN}" &
 XVFB_PID=$!
