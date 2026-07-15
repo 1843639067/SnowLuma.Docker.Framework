@@ -4,9 +4,9 @@ ARG NODE_VERSION=22
 FROM node:${NODE_VERSION}-bookworm-slim
 
 ARG TARGETARCH
-ARG QQ_VERSION=3.2.28-48517
-ARG QQ_CHANNEL=f9cbaab2
-ARG QQ_BASE_URL=https://dldir1v6.qq.com/qqfile/qq/QQNT
+ARG QQ_VERSION=3.2.31_260710
+ARG QQ_CHANNEL=c390e792
+ARG QQ_BASE_URL=https://qqdl.gtimg.cn/qqfile/QQNTV2/9.9.32/release
 
 ENV DEBIAN_FRONTEND=noninteractive \
     VNC_PASSWD=vncpasswd \
@@ -74,7 +74,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       *) echo "Unsupported Debian architecture: ${qq_arch}" >&2; exit 1 ;; \
     esac; \
     apt-get update && \
-    aria2c --check-certificate=false -x16 -s16 -o /tmp/linuxqq.deb "${QQ_BASE_URL}/${QQ_CHANNEL}/linuxqq_${QQ_VERSION}_${qq_arch}.deb" && \
+    aria2c --check-certificate=false -x16 -s16 -o /tmp/linuxqq.deb "${QQ_BASE_URL}/${QQ_CHANNEL}/QQ_${QQ_VERSION}_${qq_arch}_01.deb" && \
     (dpkg -i /tmp/linuxqq.deb || apt-get -f install -y --no-install-recommends) && \
     rm -f /tmp/linuxqq.deb && \
     chmod 777 /opt/QQ && \
